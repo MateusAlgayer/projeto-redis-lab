@@ -3,6 +3,8 @@ package org.acme.api;
 import java.util.List;
 
 import org.acme.api.dto.PromocaoDTO;
+import org.acme.domain.PromocaoInvalidaException;
+import org.acme.domain.PromocaoJaExisteException;
 import org.acme.service.PromocaoService;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
@@ -15,6 +17,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.resteasy.reactive.RestResponse;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.ws.rs.Consumes;
@@ -50,7 +53,8 @@ public class PromocaoResource {
   @Operation(summary = "Adicionar uma nova promoção", description = "Persiste a promoção informada no Redis com TTL automático calculado até a data de expiração e retorna a URI do recurso criado no cabeçalho Location.")
   @APIResponses({
       @APIResponse(responseCode = "201", description = "Promoção criada com sucesso", headers = @Header(name = "Location", description = "URI do recurso criado", schema = @Schema(type = SchemaType.STRING))),
-      @APIResponse(responseCode = "400", description = "Dados da promoção inválidos ou incompletos")
+      @APIResponse(responseCode = "400", description = "Nome ausente, percentual fora de 0 a 100 ou data de expiração ausente ou passada"),
+      @APIResponse(responseCode = "409", description = "Já existe uma promoção com o mesmo nome")
   })
   public RestResponse<Void> adicionar(
       @RequestBody(description = "Dados da promoção a ser criada", required = true, content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = PromocaoDTO.class))) PromocaoDTO promocao,
@@ -125,7 +129,7 @@ public class PromocaoResource {
   @Operation(summary = "Prorrogar validade de uma promoção", description = "Atualiza a data/hora de expiração e redefine o TTL no cache Redis para a promoção identificada pelo nome informado.")
   @APIResponses({
       @APIResponse(responseCode = "200", description = "Promoção prorrogada com sucesso", content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = PromocaoDTO.class))),
-      @APIResponse(responseCode = "400", description = "Payload inválido ou nova data de expiração não informada"),
+      @APIResponse(responseCode = "400", description = "Payload inválido ou nova data de expiração ausente ou passada"),
       @APIResponse(responseCode = "404", description = "Promoção não encontrada ou já expirada")
   })
   public RestResponse<PromocaoDTO> prorrogar(
@@ -137,5 +141,15 @@ public class PromocaoResource {
     return promocaoService.prorrogar(nomePromocao, dto.getNovaDataExpiracao())
         .map(RestResponse::ok)
         .orElseGet(RestResponse::notFound);
+  }
+
+  @ServerExceptionMapper
+  public RestResponse<Void> mapearPromocaoInvalida(PromocaoInvalidaException e) {
+    return RestResponse.status(RestResponse.Status.BAD_REQUEST);
+  }
+
+  @ServerExceptionMapper
+  public RestResponse<Void> mapearNomeEmUso(PromocaoJaExisteException e) {
+    return RestResponse.status(RestResponse.Status.CONFLICT);
   }
 }

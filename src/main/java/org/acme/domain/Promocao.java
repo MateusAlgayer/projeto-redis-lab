@@ -2,6 +2,8 @@ package org.acme.domain;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,6 +21,9 @@ public class Promocao {
   private Double percentualDesconto;
   private LocalDateTime dataExpiracao;
 
+  // Atalho de leitura: não faz parte do JSON gravado. A anotação também faz a
+  // leitura ignorar o campo em dados gravados antes.
+  @JsonIgnore
   public Double getDesconto() {
     return this.percentualDesconto;
   }

@@ -125,6 +125,9 @@ O app abre em http://localhost:8501 com quatro abas:
 | GET    | `/promocao/listar`                  | Lista todas as promoções ativas          |
 | PUT    | `/promocao/prorrogar/{nome}`        | Prorroga a validade de uma promoção      |
 
+Regras de promoção: o percentual vai de 0 a 100 e a data de expiração é obrigatória e futura, também ao
+prorrogar (caso contrário, HTTP 400). Criar com um nome já em uso resulta em HTTP 409.
+
 ### Endpoints — Cartas (cache-aside)
 
 | Método | Endpoint                            | Descrição                                                     |

@@ -18,6 +18,8 @@ import java.util.Optional;
 
 import org.acme.api.dto.PromocaoDTO;
 import org.acme.domain.Promocao;
+import org.acme.domain.PromocaoInvalidaException;
+import org.acme.domain.PromocaoJaExisteException;
 import org.acme.repository.PromocaoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,11 +40,51 @@ class PromocaoServiceTest {
   @Test
   @DisplayName("Deve adicionar promoção com sucesso")
   void testAdicionarSucesso() {
-    PromocaoDTO dto = new PromocaoDTO("cybermonday", 30.0, LocalDateTime.of(2026, 11, 30, 23, 59, 59));
+    PromocaoDTO dto = new PromocaoDTO("cybermonday", 30.0, LocalDateTime.now().plusDays(5));
+    when(promocaoRepository.add(any(Promocao.class))).thenReturn(true);
 
     promocaoService.adicionar(dto);
 
     verify(promocaoRepository, times(1)).add(any(Promocao.class));
+  }
+
+  @Test
+  @DisplayName("Deve rejeitar percentual ausente ou fora de 0 a 100")
+  void testAdicionarPercentualInvalido() {
+    LocalDateTime futura = LocalDateTime.now().plusDays(5);
+    for (Double percentual : new Double[] { null, -0.1, 100.1, Double.NaN }) {
+      PromocaoDTO dto = new PromocaoDTO("cybermonday", percentual, futura);
+      assertThrows(PromocaoInvalidaException.class, () -> promocaoService.adicionar(dto));
+    }
+    verify(promocaoRepository, never()).add(any());
+  }
+
+  @Test
+  @DisplayName("Deve rejeitar data de expiração ausente ou passada")
+  void testAdicionarExpiracaoInvalida() {
+    for (LocalDateTime data : new LocalDateTime[] { null, LocalDateTime.now().minusSeconds(1) }) {
+      PromocaoDTO dto = new PromocaoDTO("cybermonday", 30.0, data);
+      assertThrows(PromocaoInvalidaException.class, () -> promocaoService.adicionar(dto));
+    }
+    verify(promocaoRepository, never()).add(any());
+  }
+
+  @Test
+  @DisplayName("Deve sinalizar conflito quando o nome já estiver em uso")
+  void testAdicionarNomeEmUso() {
+    PromocaoDTO dto = new PromocaoDTO("cybermonday", 30.0, LocalDateTime.now().plusDays(5));
+    when(promocaoRepository.add(any(Promocao.class))).thenReturn(false);
+
+    assertThrows(PromocaoJaExisteException.class, () -> promocaoService.adicionar(dto));
+  }
+
+  @Test
+  @DisplayName("Deve rejeitar prorrogação para uma data passada")
+  void testProrrogarDataPassada() {
+    LocalDateTime passada = LocalDateTime.now().minusDays(1);
+
+    assertThrows(PromocaoInvalidaException.class, () -> promocaoService.prorrogar("cybermonday", passada));
+    verify(promocaoRepository, never()).prorrogar(any(), any());
   }
 
   @Test
@@ -135,7 +177,7 @@ class PromocaoServiceTest {
   @Test
   @DisplayName("Deve prorrogar promoção com sucesso")
   void testProrrogarSucesso() {
-    LocalDateTime novaData = LocalDateTime.of(2027, 1, 15, 23, 59, 59);
+    LocalDateTime novaData = LocalDateTime.now().plusDays(60);
     Promocao promoAtualizada = new Promocao("cybermonday", 30.0, novaData);
     when(promocaoRepository.prorrogar("cybermonday", novaData)).thenReturn(Optional.of(promoAtualizada));
 
@@ -148,7 +190,7 @@ class PromocaoServiceTest {
   @Test
   @DisplayName("Deve retornar Optional vazio ao prorrogar promoção inexistente ou com parâmetros inválidos")
   void testProrrogarInvalido() {
-    LocalDateTime novaData = LocalDateTime.of(2027, 1, 15, 23, 59, 59);
+    LocalDateTime novaData = LocalDateTime.now().plusDays(60);
     when(promocaoRepository.prorrogar("inexistente", novaData)).thenReturn(Optional.empty());
 
     assertTrue(promocaoService.prorrogar("inexistente", novaData).isEmpty());
