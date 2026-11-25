@@ -38,24 +38,30 @@ public class RedisPromocaoService implements PromocaoRepository {
   }
 
   @Override
-  public void add(Promocao promocao) {
+  public boolean add(Promocao promocao) {
     if (promocao == null || promocao.getNome() == null) {
       throw new IllegalArgumentException("A promoção e seu nome não podem ser nulos");
     }
 
     final String key = promocaoKey(promocao.getNome());
     log.info(promocao.toString());
-    // Comando SET: grava chave e valor serializado no Redis
-    valueCommands.set(key, promocao);
-
-    // Comando EXPIRE: define o tempo de expiração caso dataExpiracao esteja no
-    // futuro
-    if (promocao.getDataExpiracao() != null) {
-      final long segundosAteExpirar = ChronoUnit.SECONDS.between(LocalDateTime.now(), promocao.getDataExpiracao());
-      if (segundosAteExpirar > 0) {
-        keyCommands.expire(key, segundosAteExpirar);
-      }
+    // Comando SETNX: grava somente se a chave não existir, sem janela entre
+    // verificar e gravar
+    if (!valueCommands.setnx(key, promocao)) {
+      return false;
     }
+
+    if (promocao.getDataExpiracao() != null) {
+      expirarEm(key, promocao.getDataExpiracao());
+    }
+    return true;
+  }
+
+  // Comando EXPIRE. O mínimo de 1 segundo impede que uma data muito próxima
+  // deixe a chave sem expiração.
+  private void expirarEm(String key, LocalDateTime dataExpiracao) {
+    final long segundos = ChronoUnit.SECONDS.between(LocalDateTime.now(), dataExpiracao);
+    keyCommands.expire(key, Math.max(1, segundos));
   }
 
   @Override
@@ -133,10 +139,7 @@ public class RedisPromocaoService implements PromocaoRepository {
     final String key = promocaoKey(item);
     valueCommands.set(key, promocao);
 
-    final long segundosAteExpirar = ChronoUnit.SECONDS.between(LocalDateTime.now(), novaDataExpiracao);
-    if (segundosAteExpirar > 0) {
-      keyCommands.expire(key, segundosAteExpirar);
-    }
+    expirarEm(key, novaDataExpiracao);
 
     return Optional.of(promocao);
   }

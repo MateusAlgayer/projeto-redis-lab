@@ -4,7 +4,7 @@ status: observado
 ---
 # Listagem de promoções
 
-Inclui promoções com e sem TTL. O runner ordena por nome porque a ordem do `KEYS` não é garantida.
+Inclui todas as promoções ativas. O runner ordena por nome porque a ordem do `KEYS` não é garantida.
 
 ## Sem promoções
 
@@ -26,7 +26,7 @@ POST /promocao
 
 ```preparar
 POST /promocao
-{"nome": "a-carnaval", "percentualDesconto": 50.0, "dataExpiracao": null}
+{"nome": "a-carnaval", "percentualDesconto": 50.0, "dataExpiracao": "{{agora+2h}}"}
 ```
 
 ```http corpo:nome

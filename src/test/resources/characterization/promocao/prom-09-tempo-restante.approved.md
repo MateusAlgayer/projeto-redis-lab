@@ -4,7 +4,7 @@ status: observado
 ---
 # Tempo restante de uma promoção
 
-A resposta é o TTL em segundos, exibido aqui em minutos arredondados para cima. Uma promoção sem TTL não é tratada como inexistente.
+A resposta é o TTL em segundos, exibido aqui em minutos arredondados para cima. Cada promoção tem o seu.
 
 ```preparar
 POST /promocao
@@ -13,7 +13,7 @@ POST /promocao
 
 ```preparar
 POST /promocao
-{"nome": "eterna", "percentualDesconto": 50.0, "dataExpiracao": null}
+{"nome": "longa", "percentualDesconto": 50.0, "dataExpiracao": "{{agora+2h}}"}
 ```
 
 ## Com TTL
@@ -27,15 +27,15 @@ GET /promocao/tempoRestante/bf
 ~60min
 ```
 
-## Sem TTL
+## Outra validade
 
 ```http corpo
-GET /promocao/tempoRestante/eterna
+GET /promocao/tempoRestante/longa
 ```
 
 ```resultado
 200
-sem-expiracao
+~120min
 ```
 
 ## Inexistente

@@ -54,21 +54,45 @@ class RedisPromocaoServiceTest {
   void testAddComDataFutura() {
     LocalDateTime dataFutura = LocalDateTime.now().plusDays(5).plusMinutes(30).plusSeconds(45);
     Promocao promocao = new Promocao("carnaval", 10.0, dataFutura);
+    when(valueCommands.setnx("promocao:carnaval", promocao)).thenReturn(true);
 
-    redisPromocaoService.add(promocao);
+    assertTrue(redisPromocaoService.add(promocao));
 
-    verify(valueCommands, times(1)).set(eq("promocao:carnaval"), eq(promocao));
+    verify(valueCommands, times(1)).setnx(eq("promocao:carnaval"), eq(promocao));
     verify(keyCommands, times(1)).expire(eq("promocao:carnaval"), anyLong());
   }
 
   @Test
-  @DisplayName("Deve gravar promoção no Redis sem expiração quando dataExpiracao for nula ou passada")
+  @DisplayName("Deve gravar promoção no Redis sem expiração quando dataExpiracao for nula")
   void testAddSemExpiracao() {
     Promocao promocao = new Promocao("carnaval", 10.0, null);
+    when(valueCommands.setnx("promocao:carnaval", promocao)).thenReturn(true);
 
     redisPromocaoService.add(promocao);
 
-    verify(valueCommands, times(1)).set(eq("promocao:carnaval"), eq(promocao));
+    verify(valueCommands, times(1)).setnx(eq("promocao:carnaval"), eq(promocao));
+    verify(keyCommands, never()).expire(anyString(), anyLong());
+  }
+
+  @Test
+  @DisplayName("Deve expirar em 1 segundo quando a data já passou no momento da gravação")
+  void testAddComDataPassadaExpiraEmSeguida() {
+    Promocao promocao = new Promocao("carnaval", 10.0, LocalDateTime.now().minusDays(1));
+    when(valueCommands.setnx("promocao:carnaval", promocao)).thenReturn(true);
+
+    redisPromocaoService.add(promocao);
+
+    verify(keyCommands, times(1)).expire("promocao:carnaval", 1L);
+  }
+
+  @Test
+  @DisplayName("Não deve alterar o TTL quando o nome já estiver em uso")
+  void testAddNomeEmUso() {
+    Promocao promocao = new Promocao("carnaval", 10.0, LocalDateTime.now().plusDays(1));
+    when(valueCommands.setnx("promocao:carnaval", promocao)).thenReturn(false);
+
+    assertFalse(redisPromocaoService.add(promocao));
+
     verify(keyCommands, never()).expire(anyString(), anyLong());
   }
 

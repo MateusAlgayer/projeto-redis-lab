@@ -1,24 +1,25 @@
 ---
 regra: PROM-12
-status: suspeito
+status: observado
 ---
-# Prorrogar para uma data passada torna a promoção permanente
+# Prorrogar para uma data passada é rejeitado
 
-Suspeita: a operação é aceita e a chave perde o TTL.
+A promoção mantém a data e o TTL anteriores.
 
 ```preparar
 POST /promocao
 {"nome": "bf", "percentualDesconto": 50.0, "dataExpiracao": "{{agora+1h}}"}
 ```
 
-```http ttl
+```http redis:dataExpiracao
 PUT /promocao/prorrogar/bf
 {"novaDataExpiracao": "{{agora-1d}}"}
 ```
 
 ```resultado
-200
-promocao:bf  ttl=sem-expiracao
+400
+promocao:bf  ttl=~60min
+  dataExpiracao: "{{agora+1h}}"
 ```
 
 ## A promoção continua disponível

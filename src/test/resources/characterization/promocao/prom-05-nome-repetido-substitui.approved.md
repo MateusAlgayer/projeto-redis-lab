@@ -1,25 +1,25 @@
 ---
 regra: PROM-05
-status: suspeito
+status: observado
 ---
-# Criar com nome já usado substitui a promoção
+# Criar com nome já usado é rejeitado
 
-Suspeita: não há conflito. O valor e o TTL anteriores são substituídos.
+Resulta em conflito. O valor e o TTL da promoção existente são mantidos.
 
 ```preparar
 POST /promocao
 {"nome": "bf", "percentualDesconto": 50.0, "dataExpiracao": "{{agora+1h}}"}
 ```
 
-## Mesmo nome, outro desconto e sem data
+## Mesmo nome, outro desconto e outra data
 
 ```http redis:percentualDesconto
 POST /promocao
-{"nome": "bf", "percentualDesconto": 5.0, "dataExpiracao": null}
+{"nome": "bf", "percentualDesconto": 5.0, "dataExpiracao": "{{agora+2h}}"}
 ```
 
 ```resultado
-201
-promocao:bf  ttl=sem-expiracao
-  percentualDesconto: 5.0
+409
+promocao:bf  ttl=~60min
+  percentualDesconto: 50.0
 ```

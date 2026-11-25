@@ -1,10 +1,10 @@
 ---
 regra: PROM-04
-status: suspeito
+status: observado
 ---
-# Promoção criada com data passada não expira
+# Promoção com data passada é rejeitada
 
-Suspeita: uma promoção já vencida é aceita e gravada sem TTL.
+Uma promoção já vencida não é gravada.
 
 ```http ttl
 POST /promocao
@@ -12,16 +12,16 @@ POST /promocao
 ```
 
 ```resultado
-201
-promocao:bf  ttl=sem-expiracao
+400
+redis: (vazio)
 ```
 
-## A promoção vencida continua disponível
+## A promoção não está disponível
 
 ```http
 GET /promocao/bf
 ```
 
 ```resultado
-200
+404
 ```

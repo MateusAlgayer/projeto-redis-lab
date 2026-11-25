@@ -2,9 +2,9 @@
 regra: PROM-03
 status: observado
 ---
-# Promoção sem data de expiração não expira
+# Promoção exige uma data de expiração
 
-A API aceita a ausência da data e grava a chave sem TTL. O contrato OpenAPI declara o campo como obrigatório.
+Sem a data, a requisição é rejeitada e nada é gravado, como declara o contrato OpenAPI.
 
 ```http ttl
 POST /promocao
@@ -12,6 +12,6 @@ POST /promocao
 ```
 
 ```resultado
-201
-promocao:bf  ttl=sem-expiracao
+400
+redis: (vazio)
 ```

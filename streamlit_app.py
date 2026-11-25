@@ -205,6 +205,8 @@ with tab_criar:
                         location = resp.headers.get("Location")
                         if location:
                             st.caption(f"Recurso criado em: `{location}`")
+                    elif resp.status_code == 409:
+                        st.error("Já existe uma promoção com esse nome.")
                     elif resp.status_code == 400:
                         st.error("Dados inválidos. Verifique os campos e tente novamente.")
                     else:

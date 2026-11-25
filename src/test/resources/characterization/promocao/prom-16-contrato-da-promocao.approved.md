@@ -4,7 +4,7 @@ status: observado
 ---
 # Contrato da promoção na resposta e no Redis
 
-Este é o único cenário de promoção que registra o JSON inteiro. O valor gravado contém o campo `desconto`, derivado de `getDesconto()`, que não aparece na API.
+Este é o único cenário de promoção que registra o JSON inteiro. O valor gravado tem os mesmos campos da resposta.
 
 ```preparar
 POST /promocao
@@ -23,5 +23,5 @@ GET /promocao/bf
   "percentualDesconto" : 50.0
 }
 promocao:bf  ttl=~60min
-  {"dataExpiracao":"{{agora+1h}}","desconto":50.0,"nome":"bf","percentualDesconto":50.0}
+  {"dataExpiracao":"{{agora+1h}}","nome":"bf","percentualDesconto":50.0}
 ```

@@ -9,7 +9,12 @@ import org.acme.domain.Promocao;
  * PromocaoRepository
  */
 public interface PromocaoRepository {
-  public void add(Promocao promocao);
+  /**
+   * Grava a promoção somente se o nome ainda não estiver em uso.
+   *
+   * @return {@code false} se já existia uma promoção com o mesmo nome
+   */
+  public boolean add(Promocao promocao);
 
   public Optional<Promocao> get(String key);
 
