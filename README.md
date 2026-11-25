@@ -408,6 +408,13 @@ O relatório imprime tempo total, latência (min/p50/média/p95/max), distribui�
 
 ---
 
+### Testes de caracterização
+
+O comportamento de cada regra do sistema é registrado em arquivos Markdown versionados (approved fixtures).
+Veja o [catálogo de regras e o fluxo de aprovação](src/test/resources/characterization/README.md).
+
+---
+
 ## 🛠️ Tecnologias
 
 | Camada     | Tecnologia                          |
