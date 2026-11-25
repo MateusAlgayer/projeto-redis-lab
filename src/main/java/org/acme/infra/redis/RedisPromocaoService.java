@@ -67,8 +67,11 @@ public class RedisPromocaoService implements PromocaoRepository {
     try {
       // Comando GET: obtém o valor mapeado para a chave
       Promocao promocao = valueCommands.get(promocaoKey(item));
+      if (promocao == null) {
+        return Optional.empty();
+      }
       log.info(promocao.toString());
-      return Optional.ofNullable(promocao);
+      return Optional.of(promocao);
     } catch (RedisKeyNotFoundException e) {
       return Optional.empty();
     }

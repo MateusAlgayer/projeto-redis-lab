@@ -2,15 +2,28 @@
 
 API REST para criação, consulta e gerenciamento do ciclo de vida de promoções com **expiração automática** utilizando **Redis**, construída com **Quarkus** e acompanhada de um cliente web interativo em **Streamlit**.
 
+Inclui também um **cache-aside** de cartas de *Magic: The Gathering*: a API consulta a [Magic: The Gathering API](https://docs.magicthegathering.io/) e grava o resultado no Redis, servindo as próximas consultas direto do cache.
+
 ---
 
 ## 📐 Arquitetura
 
 ```
-┌──────────────────┐        HTTP/JSON        ┌──────────────────────────┐       Redis Protocol       ┌───────────┐
-│  Streamlit App   │ ◄────────────────────►  │  Quarkus REST API        │ ◄────────────────────────► │   Redis   │
-│  (Python client) │   polling a cada 1s     │  (PromocaoResource.java) │   SET/GET/EXPIRE/TTL/...   │  (Cache)  │
-└──────────────────┘                         └──────────────────────────┘                            └───────────┘
+                          ┌──────────────────────────────┐
+                          │  api.magicthegathering.io    │
+                          │  (fonte de dados das cartas) │
+                          └──────────────▲───────────────┘
+                                         │ 2) miss: GET /v1/cards/{id}
+┌──────────────────┐        HTTP/JSON     │
+│  Streamlit App   │ ◄──────────────────┐ │
+│  (Python client) │   polling a cada 1s│ │
+└──────────────────┘                    ▼ ▼
+                       ┌────────────────────────────────┐  Redis Protocol  ┌───────────┐
+                       │  Quarkus REST API              │ ◄──────────────► │   Redis   │
+                       │  PromocaoResource / CartaResource │  GET/SET/EXPIRE │  (Cache) │
+                       └────────────────────────────────┘  TTL/DEL/KEYS...  └───────────┘
+                                         ▲
+                                         │ 1) cache HIT: lê direto do Redis
 ```
 
 ### Estrutura do projeto
@@ -18,18 +31,28 @@ API REST para criação, consulta e gerenciamento do ciclo de vida de promoçõe
 ```
 src/main/java/org/acme/
 ├── api/
-│   ├── PromocaoResource.java          # Endpoints REST (JAX-RS)
+│   ├── PromocaoResource.java          # Endpoints REST (JAX-RS) de promoções
+│   ├── CartaResource.java             # Endpoints REST do cache-aside de cartas
 │   └── dto/
 │       ├── PromocaoDTO.java           # DTO de promoção
-│       └── ProrrogarPromocaoDTO.java  # DTO de prorrogação
+│       ├── ProrrogarPromocaoDTO.java  # DTO de prorrogação
+│       └── CartaCacheDTO.java         # DTO da carta + metadados de cache
+├── infra/
+│   ├── api/
+│   │   ├── MtgApiClient.java          # REST Client (MicroProfile) da API MTG
+│   │   └── MtgApiException.java       # Erro de comunicação com a API MTG
+│   └── redis/
+│       ├── RedisPromocaoService.java  # Implementação Redis do repositório
+│       └── RedisCartaRepository.java  # Implementação Redis do cache-aside
 ├── domain/
-│   └── Promocao.java                  # Entidade de domínio
+│   ├── Promocao.java                  # Entidade de domínio
+│   └── Carta.java                     # Entidade de domínio (carta MTG)
 ├── repository/
-│   └── PromocaoRepository.java        # Interface do repositório
-├── service/
-│   └── PromocaoService.java           # Regras de negócio
-└── infra/redis/
-    └── RedisPromocaoService.java      # Implementação Redis do repositório
+│   ├── PromocaoRepository.java        # Interface do repositório
+│   └── CartaRepository.java           # Interface do cache de cartas
+└── service/
+    ├── PromocaoService.java           # Regras de negócio de promoções
+    └── CartaService.java              # Orquestração do cache-aside
 
 streamlit_app.py                       # Cliente web Streamlit
 requirements.txt                       # Dependências Python
@@ -102,6 +125,17 @@ O app abre em http://localhost:8501 com quatro abas:
 | GET    | `/promocao/listar`                  | Lista todas as promoções ativas          |
 | PUT    | `/promocao/prorrogar/{nome}`        | Prorroga a validade de uma promoção      |
 
+### Endpoints — Cartas (cache-aside)
+
+| Método | Endpoint                            | Descrição                                                     |
+|--------|-------------------------------------|---------------------------------------------------------------|
+| GET    | `/carta/{id}`                       | Consulta a carta aplicando o cache-aside (header `X-Cache`)   |
+| GET    | `/carta/{id}/cache`                 | Verifica se a carta está no cache (200 sim / 404 não)         |
+| GET    | `/carta/{id}/cache/tempoRestante`   | Retorna o TTL restante da entrada no cache                    |
+| DELETE | `/carta/{id}/cache`                 | Invalida a entrada da carta no cache (evict)                  |
+
+> `{id}` aceita o SHA1 do card ou o `multiverseid` (ex.: `386616`).
+
 ### Exemplo de payload — Criar promoção
 
 ```json
@@ -118,6 +152,90 @@ O app abre em http://localhost:8501 com quatro abas:
 {
   "novaDataExpiracao": "2027-01-31T23:59:59"
 }
+```
+
+---
+
+## 🃏 Cache-Aside de Cartas (Magic: The Gathering)
+
+Implementação do padrão **cache-aside** (*lazy loading*) em que a aplicação — e não o cliente do cache — é responsável por ler o Redis e, em caso de *miss*, ir até a fonte de dados:
+
+```
+GET /carta/386616
+      │
+      ▼
+ ┌──────────────┐   hit    ┌────────────────────────────┐
+ │  Redis       │ ───────► │ retorna a carta            │  X-Cache: HIT   (fonte: REDIS)
+ │  carta:{id}  │          └────────────────────────────┘
+ └──────┬───────┘
+        │ miss
+        ▼
+ ┌──────────────────────────┐   404   ┌──────────────┐
+ │ api.magicthegathering.io │ ──────► │ HTTP 404     │
+ │ GET /v1/cards/{id}       │         └──────────────┘
+ └──────┬───────────────────┘
+        │ 200
+        ▼
+ ┌────────────────────────────┐
+ │ SET carta:{id} + EXPIRE    │  popula o cache com TTL (padrão 3600s)
+ │ retorna a carta            │  X-Cache: MISS  (fonte: API)
+ └────────────────────────────┘
+```
+
+**Fluxo ([`CartaService.buscarComCache`](src/main/java/org/acme/service/CartaService.java)):**
+
+1. `GET carta:{id}` no Redis — se existir, devolve com `X-Cache: HIT`;
+2. em caso de *miss*, chama a API Magic: The Gathering via [`MtgApiClient`](src/main/java/org/acme/infra/api/MtgApiClient.java) (REST Client do MicroProfile, `GET /v1/cards/{id}`);
+3. grava a resposta no Redis com `SET` + `EXPIRE` e devolve com `X-Cache: MISS`.
+
+> **Por que cache-aside?** A API externa tem *rate limit* de 5.000 requisições/hora; o cache reduz drasticamente as chamadas e protege a aplicação caso a fonte de dados fique indisponível (o endpoint responde `503` nesse caso).
+
+### Exemplo de resposta
+
+```json
+{
+  "carta": {
+    "id": "15e45fe0-92ea-52dc-8665-7105ac30db70",
+    "name": "Narset, Enlightened Master",
+    "manaCost": "{3}{U}{R}{W}",
+    "cmc": 6.0,
+    "rarity": "Mythic Rare",
+    "set": "KTK"
+  },
+  "cacheHit": true,
+  "fonte": "REDIS",
+  "tempoRestanteCache": 3594
+}
+```
+
+### Configuração
+
+| Propriedade | Padrão | Descrição |
+|---|---|---|
+| `mtg.api.base-url` | `https://api.magicthegathering.io/v1` | URL base da API Magic: The Gathering |
+| `quarkus.rest-client.mtgApiUrl.url` | `${mtg.api.base-url}` | URL do REST Client (`configKey = mtgApiUrl`) |
+| `quarkus.rest-client.mtgApiUrl.connect-timeout` | `10000` | Timeout de conexão (ms) |
+| `quarkus.rest-client.mtgApiUrl.read-timeout` | `10000` | Timeout de leitura (ms) |
+| `carta.cache.ttl-segundos` | `3600` | TTL da entrada no cache |
+
+A chave no Redis segue o padrão **`carta:{id}`** (ex.: `carta:386616`).
+
+### Comandos Redis usados pelo cache-aside
+
+| Operação                          | Comandos Redis   |
+|-----------------------------------|------------------|
+| Consulta (leitura)                | `GET`            |
+| Preencher o cache após o *miss*   | `SET` → `EXPIRE` |
+| Verificar presença no cache       | `EXISTS`         |
+| TTL restante da carta             | `TTL`            |
+| Invalidar manualmente (evict)     | `DEL`            |
+
+```bash
+# Exemplos
+curl -i http://localhost:8080/carta/386616            # 1ª chamada: X-Cache: MISS
+curl -i http://localhost:8080/carta/386616            # 2ª chamada: X-Cache: HIT
+curl -i http://localhost:8080/carta/386616/cache      # 200 se estiver no cache
+curl -i -X DELETE http://localhost:8080/carta/386616/cache   # invalida a entrada
 ```
 
 ---
@@ -259,6 +377,34 @@ Busca todas as chaves que correspondem ao padrão glob `promocao:*`, retornando 
 # Executar testes unitários (DevServices sobe Redis automaticamente)
 ./mvnw test
 ```
+
+### Teste de estresse do cache-aside
+
+O script [`stress_test.py`](stress_test.py) executa duas fases de carga em **paralelo** (`ThreadPoolExecutor`) contra `/carta/{id}`:
+
+1. **populate** — busca 15 cartas simultaneamente (espera-se `X-Cache: MISS` → cada miss consulta a API MTG e grava no Redis);
+2. **cache** — busca as mesmas cartas de novo (espera-se `X-Cache: HIT`, só Redis).
+
+```bash
+./mvnw quarkus:dev          # API no ar
+pip install -r requirements.txt
+
+python stress_test.py                                            # padrão: 15 cartas, 8 threads
+python stress_test.py --repeticoes 3 --concorrencia 12           # 3 rodadas na fase de cache
+python stress_test.py --cartas 30 --concorrencia 12              # carga maior
+```
+
+O relatório imprime tempo total, latência (min/p50/média/p95/max), distribuição HIT/MISS, speedup entre as fases e sai com código `1` quando há falhas HTTP ou misses inesperados.
+
+| Opção                | Padrão               | Descrição                                    |
+|----------------------|----------------------|----------------------------------------------|
+| `--base-url`         | `http://localhost:8080` | URL base da API Quarkus                    |
+| `--cartas`           | `15`                 | Quantidade de cartas                         |
+| `--concorrencia`     | `8`                  | Threads em paralelo                          |
+| `--repeticoes`       | `1`                  | Rodadas da fase de cache                     |
+| `--sem-limpar-cache` | desligado            | Não invalida o cache antes de começar        |
+
+> Os ids das cartas são obtidos da própria API Magic: The Gathering (`/v1/cards?pageSize=N`) antes da carga.
 
 ---
 
